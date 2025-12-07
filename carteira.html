@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Carteira — Magaxia</title>
+
+<style>
+/* (mesmo CSS que você tinha — preservado) */
+body{
+  margin:0;
+  font-family:Arial, sans-serif;
+  color:#000;
+  background: radial-gradient(circle at top, #4da3ff, #003bff 60%, #001a66);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  box-sizing:border-box;
+}
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,0.35), transparent 60%),
+    radial-gradient(circle at 80% 70%, rgba(255,255,255,0.20), transparent 70%);
+  pointer-events:none;
+  filter:blur(40px);
+  z-index:0;
+}
+.container{
+  max-width:420px;
+  margin:40px auto;
+  background:rgba(255,255,255,0.32);
+  padding:20px;
+  border-radius:12px;
+  -webkit-backdrop-filter:blur(10px);
+  backdrop-filter:blur(10px);
+  box-shadow:0 6px 20px rgba(0,0,0,.3);
+  position:relative;
+  z-index:1;
+}
+label{
+  display:block;
+  font-weight:bold;
+  margin-top:12px;
+  margin-bottom:4px;
+  color:#000;
+}
+input, select{
+  width:100%;
+  padding:10px;
+  margin-bottom:8px;
+  border-radius:8px;
+  border:none;
+  background:rgba(255,255,255,0.65);
+  backdrop-filter:blur(6px);
+  color:#000;
+  font-size:14px;
+}
+button{
+  width:100%;
+  padding:12px;
+  margin-top:10px;
+  border-radius:10px;
+  border:none;
+  background:#4da3ff;
+  color:#000;
+  font-weight:bold;
+  cursor:pointer;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);
+}
+button:hover{
+  background:#33c7ff;
+}
+.sucesso{
+  display:none;
+  margin-top:15px;
+  padding:12px;
+  background:#00ff88;
+  color:#000;
+  text-align:center;
+  border-radius:8px;
+  animation:fadeIn 0.6s ease;
+}
+@keyframes fadeIn{
+  from{opacity:0; transform:scale(0.9);}
+  to{opacity:1; transform:scale(1);}
+}
+.log-box{
+  margin-top:25px;
+  background:rgba(255,255,255,0.45);
+  padding:15px;
+  border-radius:10px;
+  max-height:220px;
+  overflow-y:auto;
+  backdrop-filter:blur(6px);
+  color:#000;
+}
+.log-item{
+  margin-bottom:10px;
+  padding-bottom:8px;
+  border-bottom:1px solid rgba(0,0,0,0.1);
+}
+.glow-text {
+  font-weight: bold;
+  color: #000;
+  text-shadow:
+      0 0 6px rgba(255,255,255,0.9),
+      0 0 12px rgba(255,255,255,0.7),
+      0 0 22px rgba(255,255,255,0.6);
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h2 class="glow-text">💼 Carteira</h2>
+
+  <!-- SALDO -->
+  <p><b>Saldo disponível:</b> R$ <span id="saldo">0,00</span></p>
+
+  <hr>
+
+  <h3 class="glow-text">Solicitar Saque</h3>
+
+  <label for="valor">Valor do Saque</label>
+  <input type="number" id="valor" placeholder="Ex: 100">
+
+  <label for="nome">Nome Completo</label>
+  <input type="text" id="nome" placeholder="Seu nome completo">
+
+  <label for="tipoPix">Tipo de chave Pix</label>
+  <select id="tipoPix">
+    <option value="cpf">CPF</option>
+    <option value="email">E-mail</option>
+    <option value="telefone">Telefone</option>
+  </select>
+
+  <label for="chave">Chave Pix</label>
+  <input type="text" id="chave" placeholder="Digite a chave escolhida">
+
+  <button id="btnSaque">Sacar</button>
+
+  <div id="sucesso" class="sucesso">✅ Saque realizado com sucesso!</div>
+
+  <h3 class="glow-text">📜 Histórico de saques</h3>
+  <div class="log-box" id="historico">Nenhum saque realizado.</div>
+</div>
+
+<script src="firebase.js"></script>
+<script>
+  const taxaSaque = 5;
+  const btnSaque = document.getElementById("btnSaque");
+  const historicoDiv = document.getElementById("historico");
+  const saldoSpan = document.getElementById("saldo");
+
+  let currentUser = null;
+  let userRef = null;
+
+  auth.onAuthStateChanged(async user=>{
+    if(!user){
+      window.location.href = 'login.html?next=carteira';
+      return;
+    }
+    currentUser = user;
+    await ensureUserRecord(user);
+    userRef = db.collection('usuarios').doc(user.uid);
+
+    userRef.onSnapshot(snap=>{
+      const data = snap.data() || {};
+      const saldo = Number(data.saldo || 0);
+      saldoSpan.innerText = saldo.toFixed(2).replace('.',',');
+    });
+
+    carregarHistorico();
+  });
+
+  async function carregarHistorico(){
+    if(!currentUser) return;
+    const q = db.collection('saques').where('uid','==', currentUser.uid).orderBy('createdAt','desc');
+    const snap = await q.get();
+    if(snap.empty){
+      historicoDiv.innerHTML = "Nenhum saque realizado.";
+      return;
+    }
+    historicoDiv.innerHTML = snap.docs.map(d=>{
+      const it = d.data();
+      return `<div class="log-item">
+          <b>Valor:</b> R$ ${Number(it.valor).toFixed(2)}<br>
+          <b>Taxa:</b> R$ ${Number(it.taxa).toFixed(2)}<br>
+          <b>Status:</b> ${it.status}<br>
+          <b>Data:</b> ${it.createdAt ? it.createdAt.toDate().toLocaleString('pt-BR') : ''}
+        </div>`;
+    }).join('');
+  }
+
+  function validarCPF(cpf){
+    return /^\\d{11}$/.test(cpf);
+  }
+  function validarTelefone(t){
+    return /^\\d{10,11}$/.test(t);
+  }
+  function validarEmail(email){
+    return email.includes("@") && email.includes(".");
+  }
+
+  btnSaque.addEventListener("click", async function(){
+    if(!currentUser){ alert('Usuário não identificado'); return; }
+    const valor = Number(document.getElementById("valor").value);
+    const nome = document.getElementById("nome").value.trim();
+    const tipo = document.getElementById("tipoPix").value;
+    const chave = document.getElementById("chave").value.trim();
+
+    if(!valor || valor <= 0){ alert("Digite um valor válido."); return; }
+    if(nome.length < 5){ alert("Informe seu nome completo."); return; }
+
+    if(tipo === "cpf" && !validarCPF(chave)){ alert("CPF inválido!"); return; }
+    if(tipo === "telefone" && !validarTelefone(chave)){ alert("Telefone inválido!"); return; }
+    if(tipo === "email" && !validarEmail(chave)){ alert("E-mail inválido!"); return; }
+
+    // Criar solicitação de saque com status 'pendente' (admin aprova/rejeita no painel).
+    await db.collection('saques').add({
+      uid: currentUser.uid,
+      valor: Number(valor),
+      taxa: Number(taxaSaque),
+      nome: nome,
+      tipoPix: tipo,
+      chave: chave,
+      status: 'pendente',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    alert('Solicitação enviada. Aguarde aprovação do administrador.');
+    document.getElementById("valor").value = "";
+    document.getElementById("chave").value = "";
+    carregarHistorico();
+  });
+</script>
+
+</body>
+</html>
